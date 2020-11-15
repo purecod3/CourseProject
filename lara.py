@@ -3,11 +3,19 @@ import math
 import pandas as pd
 
 
-def normalize(input_matrix):
+def normalize_rows(input_matrix):
+    """
+    Normalizes the rows of a 2d input_matrix so they sum to 1
+    """
+    row_sums = input_matrix.sum(axis=1)
+    new_matrix = input_matrix / row_sums[:, np.newaxis]
+    return new_matrix
+
+
+def normalize_columns(input_matrix):
     """
     Normalizes the columns of a 2d input_matrix so they sum to 1
     """
-
     col_sums = input_matrix.sum(axis=0)
     new_matrix = input_matrix / col_sums[np.newaxis :]
     return new_matrix
@@ -28,12 +36,15 @@ class Corpus(object):
         self.likelihoods = []
         self.pickle_path = pickle_path
         self.term_doc_matrix = None
+        self.max_doc_length = 0
         self.ratings = [] 
         self.number_of_documents = 0
         self.vocabulary_size = 0
         self.epsilon = None  # word distribution of aspect: |V| * k
         self.s = None        # aspect rating: |D| * k
         self.alpha = None    # aspect weight: |D| * k
+        self.beta = None     # word polarity: k * |V|
+        self.z = None        # aspect asignment: |D| * max(|d|)
 
     def build_corpus(self):
         """
@@ -43,8 +54,9 @@ class Corpus(object):
         print(df)
         for index, row in df.iterrows():
             self.documents.append(row['review_words'])
-            self.ratings.append(row['rating'])
+            self.ratings.append((float(row['rating']) - 1.0) / 5.0) # Normalize the ratings form 1-5 to 0-1
             self.number_of_documents += 1
+            self.max_doc_length = max(self.max_doc_length, len(row['review_words']))
 
 
     def build_vocabulary(self):
@@ -83,10 +95,22 @@ class Corpus(object):
     def initialize(self, number_of_aspects):
         """
         """
-        self.epsilon = normalize(np.random.rand(self.vocabulary_size, number_of_aspects))
+        self.epsilon = normalize_columns(np.random.rand(self.vocabulary_size, number_of_aspects))
         self.s = np.zeros([self.number_of_documents, number_of_aspects])
-        self.alpha = normalize(np.random.rand(self.number_of_documents, number_of_aspects))
+        self.alpha = normalize_rows(np.random.rand(self.number_of_documents, number_of_aspects))
+        self.beta = np.random.rand(number_of_aspects, self.vocabulary_size)
+        self.z = np.random.randint(number_of_aspects, size=[self.number_of_documents, self.max_doc_length])
+
+        print("epsilon: " + str(np.shape(self.epsilon)))
         # print(self.epsilon)
+        print("alpha: " + str(np.shape(self.alpha)))
+        # print(self.alpha)
+        print("beta: " + str(np.shape(self.beta)))
+        # print(self.beta)
+        print("z: " + str(np.shape(self.z)))
+        # print(self.z)
+        print("s: " + str(np.shape(self.s)))
+        
         
 
     def expectation_step(self, number_of_aspects):
@@ -124,14 +148,15 @@ class Corpus(object):
         """
         Model aspects.
         """
-        print ("EM iteration begins...")
-        
         # build term-doc matrix
+        print("Initialize doc matrix...")
         self.build_term_doc_matrix()
         
         # Create the counter arrays.
-        
+        print("Randomize initial values...")
         self.initialize(number_of_aspects)
+
+        print ("EM iteration begins...")
 
         # Run the EM algorithm
         current_likelihood = 0.0
