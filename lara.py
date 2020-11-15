@@ -1,6 +1,7 @@
 import numpy as np
 import math
 import pandas as pd
+import time
 
 
 def normalize_rows(input_matrix):
@@ -66,12 +67,14 @@ class Corpus(object):
 
         Update self.vocabulary_size
         """
-        vocabulary = set()
-        for document in self.documents:
-            for word in document:
-                vocabulary.add(word)
-        self.vocabulary = list(vocabulary)
+        time0 = time.time()
+        words = set()
+        for line in self.documents:
+            words.update(line)
+        self.vocabulary = sorted(words)
         self.vocabulary_size = len(self.vocabulary)
+        time1 = time.time()
+        print("Built vocabulary in {}s".format(time1-time0))
 
 
     def build_term_doc_matrix(self):
@@ -81,15 +84,16 @@ class Corpus(object):
 
         self.term_doc_matrix[i][j] is the count of term j in document i
         """
-        idx = {}
-        for i, word in enumerate(self.vocabulary):
-            idx[word] = i
+        time0 = time.time()
+        idx = dict(zip(self.vocabulary, range(len(self.vocabulary))))
         # print(idx)
         self.term_doc_matrix = np.zeros([len(self.documents), self.vocabulary_size], dtype=np.float)
         for i, document in enumerate(self.documents):
             for word in document:
                 self.term_doc_matrix[i][idx[word]] += 1
         # print(self.term_doc_matrix)
+        time1 = time.time()
+        print("Built term_doc_matrix in {}s".format(time1-time0))
 
 
     def initialize(self, number_of_aspects):
