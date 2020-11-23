@@ -46,7 +46,8 @@ def evaluate_embeddings(training_data, training_labels, testing_data, testing_la
     print("  Recall = {0:.3f} ({1}/{2})".format(true_positives/(true_positives+false_negatives), true_positives, true_positives+false_negatives))
 
 
-def load_csv(input_path, label_dict, test_set_size):
+def load_csv(input_path, test_set_size):
+    label_dict = {'spam': 1, 'ham': 0}
     labels = []
     documents = []
     df = pd.read_csv(input_path,
@@ -88,15 +89,26 @@ def load_csv(input_path, label_dict, test_set_size):
             testing_df['Category'])
 
 
-def calculate_topic_distributions(vocabulary_size, num_topics, training_term_doc_matrix, testing_term_doc_matrix):
-    # Step 1: Run E-M on training_term_doc_matrix
-    # Step 2: Run the E-step using the phi calculated in step 1 to compute gamma for testing_term_doc_matrix
-    # return (training_data_topic_distributions, testing_topic_distributions)
-    return (training_term_doc_matrix, testing_term_doc_matrix)
+class LDA(object):
+    def __init__(self, vocabulary_size):
+        self.vocabulary_size = vocabulary_size
+        self.num_topics = 1
+
+    def train(self, num_topics, term_doc_matrix):
+        self.num_topics = num_topics
+        # TODO Run E-M on term_doc_matrix
+
+    def get_topic_distributions(self, term_doc_matrix):
+        # TODO Run the E-step using the phi calculated in training to compute gamma for term_doc_matrix
+        return term_doc_matrix
 
 
 def main():
-    (vocabulary_size, training_term_doc_matrix, training_labels, testing_term_doc_matrix, testing_labels) = load_csv(input_path = 'spam.csv.1000', label_dict = {'spam': 1, 'ham': 0}, test_set_size = 500)
+    (vocabulary_size,
+     training_term_doc_matrix,
+     training_labels,
+     testing_term_doc_matrix,
+     testing_labels) = load_csv(input_path = 'spam.csv.1000', test_set_size = 500)
 
     print("SVM with word frequencies")
     evaluate_embeddings(normalize_rows(training_term_doc_matrix),
@@ -104,11 +116,13 @@ def main():
                         normalize_rows(testing_term_doc_matrix),
                         testing_labels)
 
-    (training_topic_distributions, testing_topic_distributions) = calculate_topic_distributions(vocabulary_size, 10, training_term_doc_matrix, testing_term_doc_matrix)
+    lda = LDA(vocabulary_size)
+    lda.train(num_topics=10, term_doc_matrix=training_term_doc_matrix)
+
     print("SVM with topic distributions from LDA")
-    evaluate_embeddings(training_topic_distributions,
+    evaluate_embeddings(lda.get_topic_distributions(training_term_doc_matrix),
                         training_labels,
-                        testing_topic_distributions,
+                        lda.get_topic_distributions(testing_term_doc_matrix),
                         testing_labels)
 
 
