@@ -7,6 +7,10 @@ from sklearn import svm
 import time
 
 
+def normalize(row):
+    return row / row.sum()
+
+
 def normalize_rows(input_matrix):
     """
     Normalizes the rows of a 2d input_matrix so they sum to 1
@@ -92,14 +96,27 @@ def load_csv(input_path, test_set_size):
 class LDA(object):
     def __init__(self, vocabulary_size):
         self.vocabulary_size = vocabulary_size
-        self.num_topics = 1
 
-    def train(self, num_topics, term_doc_matrix):
+    def train(self, num_topics, term_doc_matrix, iterations):
+        num_docs = term_doc_matrix.shape[0]
         self.num_topics = num_topics
-        # TODO Run E-M on term_doc_matrix
+        self.alpha = normalize(np.random.rand(num_topics))
+            # topic distribution
+            # dim = num_topics
+
+        self.theta = normalize_rows(np.random.rand(num_docs, num_topics))
+            # topic distribution of each doc
+            # dim = num_docs * num_topics
+        self.phi = normalize_rows(np.random.rand(num_topics, self.vocabulary_size))
+            # word distribution of each topic
+            # dim = num_topics * vocabulary_size
+
+        for iteration in range(iterations):
+            next
+            # TODO Run E-M on term_doc_matrix
 
     def get_topic_distributions(self, term_doc_matrix):
-        # TODO Run the E-step using the phi calculated in training to compute gamma for term_doc_matrix
+        # TODO Run the E-step using the phi calculated in training to compute the topic distribution for each test doc
         return term_doc_matrix
 
 
@@ -117,7 +134,7 @@ def main():
                         testing_labels)
 
     lda = LDA(vocabulary_size)
-    lda.train(num_topics=10, term_doc_matrix=training_term_doc_matrix)
+    lda.train(num_topics=5, term_doc_matrix=training_term_doc_matrix, iterations=10)
 
     print("SVM with topic distributions from LDA")
     evaluate_embeddings(lda.get_topic_distributions(training_term_doc_matrix),
