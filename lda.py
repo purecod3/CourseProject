@@ -15,7 +15,7 @@ def normalize_rows(input_matrix):
     """
     Normalizes the rows of a 2d input_matrix so they sum to 1
     """
-    row_sums = input_matrix.sum(axis=1) + 0.000001
+    row_sums = input_matrix.sum(axis=1) + 0.0000001
     new_matrix = input_matrix / row_sums[:, np.newaxis]
     return new_matrix
 
@@ -24,7 +24,7 @@ def normalize_columns(input_matrix):
     """
     Normalizes the columns of a 2d input_matrix so they sum to 1
     """
-    col_sums = input_matrix.sum(axis=0) + 0.000001
+    col_sums = input_matrix.sum(axis=0) + 0.0000001
     new_matrix = input_matrix / col_sums[np.newaxis :]
     return new_matrix
 
@@ -57,7 +57,9 @@ def load_csv(input_path, test_set_size):
     df = pd.read_csv(input_path,
                      converters={
                          'Category': lambda x: (label_dict[x]),
-                         'Message': lambda x: (re.sub('[^0-9a-zA-Z]+', ' ', x).split()), # replace non-alphanumeric characters with spaces
+                         'Message': lambda line: list(filter(lambda word: (len(word) > 2),
+                                                             re.sub('[^0-9a-zA-Z]+', ' ', line).lower().split())),
+                                    # replace non-alphanumeric characters with spaces and filter out words with fewer than 3 letters
                      })
     testing_df = df[:test_set_size]
     training_df = df[test_set_size:]
@@ -90,56 +92,171 @@ def load_csv(input_path, test_set_size):
             training_term_doc_matrix,
             training_df['Category'],
             testing_term_doc_matrix,
-            testing_df['Category'])
+            testing_df['Category'],
+            vocabulary,)
 
 
 class LDA(object):
     def __init__(self, vocabulary_size):
         self.vocabulary_size = vocabulary_size
+        self.num_topics = None
+        self.alpha = None
+        self.beta = None
+        self.phi = None
+        self.topic_sampling_count = None
+
+    def get_variable_length_docs(self, term_doc_matrix):
+        variable_length_docs = []
+        for row in term_doc_matrix:
+            variable_length_doc = []
+            for word, count in enumerate(row.tolist()):
+                for i in range(int(count)):
+                    variable_length_doc.append(word)
+            variable_length_docs.append(variable_length_doc)
+        return variable_length_docs
 
     def train(self, num_topics, term_doc_matrix, iterations):
+        print("Training LDA...")
+        docs = self.get_variable_length_docs(term_doc_matrix)
         num_docs = term_doc_matrix.shape[0]
-        self.num_topics = num_topics
-        self.alpha = normalize(np.random.rand(num_topics))
-            # topic distribution
-            # dim = num_topics
 
-        self.theta = normalize_rows(np.random.rand(num_docs, num_topics))
+        self.num_topics = num_topics
+        self.alpha = 1.0 / num_topics
+            # Dirichlet prior for the topic distribution of documents
+        self.beta = 1.0 / num_docs
+            # Dirichlet prior for the word distribution of topics
+
+        # Initialize the arrays to 0
+        z = [[0 for w in range(len(doc))] for doc in docs]
+            # topic for each word in each doc
+            # dim = num_docs * doc length
+        theta = np.zeros((num_docs, self.num_topics))
             # topic distribution of each doc
             # dim = num_docs * num_topics
-        self.phi = normalize_rows(np.random.rand(num_topics, self.vocabulary_size))
+        self.phi = np.zeros((self.num_topics, self.vocabulary_size))
             # word distribution of each topic
             # dim = num_topics * vocabulary_size
 
+        doc_sampling_count = np.zeros((num_docs))
+        self.topic_sampling_count = np.zeros((self.num_topics))
+
+        # Randomly assign a topic to each word in each doc
+        for d, doc in enumerate(docs):
+            for n, w in enumerate(doc):
+                topic = random.randint(0, self.num_topics-1)
+                z[d][n] = topic
+                theta[d][topic] += 1
+                self.phi[topic][w] += 1
+                doc_sampling_count[d] += 1
+                self.topic_sampling_count[topic] += 1
+
         for iteration in range(iterations):
-            next
-            # TODO Run E-M on term_doc_matrix
+            topic_changes = 0
+            for d, doc in enumerate(docs):
+                for n, w in enumerate(doc):
+                    topic = z[d][n]
 
-    def get_topic_distributions(self, term_doc_matrix):
-        # TODO Run the E-step using the phi calculated in training to compute the topic distribution for each test doc
-        return term_doc_matrix
+                    # Remove the topic assignment for the word
+                    theta[d][topic] -= 1
+                    self.phi[topic][w] -= 1
+                    self.topic_sampling_count[topic] -= 1
 
+                    # Recalculate the topic
+                    p_topic_given_doc = (theta[d] + self.alpha) / (doc_sampling_count[d] - 1 + self.num_topics * self.alpha)
+                    p_word_given_topic = (self.phi[:,w] + self.beta) / (self.topic_sampling_count + self.vocabulary_size * self.beta)
+                    p_topic = p_topic_given_doc * p_word_given_topic
+                    p_topic /= np.sum(p_topic)
+                    new_topic = np.random.multinomial(1, p_topic).argmax()
+
+                    # Assign the new topic to the word
+                    z[d][n] = new_topic
+                    theta[d][new_topic] += 1
+                    self.phi[new_topic][w] += 1
+                    self.topic_sampling_count[new_topic] += 1
+
+                    if topic != new_topic:
+                        topic_changes += 1
+
+            if iteration % 10 == 0:
+                print('Iteration {0}: {1} words changed topics.'.format(iteration, topic_changes))
+
+
+    def debug_phi(self, vocabulary):
+        for topic, words in enumerate(self.phi):
+            print('Topic {}:'.format(topic))
+            for w, p in enumerate(words / (np.sum(words) + 0.0000001)):
+                if p > 0.01:
+                    print(' {0} : {1}'.format(vocabulary[w], p))
+
+
+    def get_topic_distributions(self, term_doc_matrix, iterations=10):
+        print("Predict topic distributions for the new documents using the existing LDA model...")
+        docs = self.get_variable_length_docs(term_doc_matrix)
+        num_docs = term_doc_matrix.shape[0]
+
+        # Initialize the arrays to 0
+        z = [[0 for w in range(len(doc))] for doc in docs]
+        theta = np.zeros((num_docs, self.num_topics))
+
+        doc_sampling_count = np.zeros((num_docs))
+
+        # Randomly assign a topic to each word in each doc
+        for d, doc in enumerate(docs):
+            for n, w in enumerate(doc):
+                topic = random.randint(0, self.num_topics-1)
+                z[d][n] = topic
+                theta[d][topic] += 1
+                doc_sampling_count[d] += 1
+
+
+        for iteration in range(iterations):
+            for d, doc in enumerate(docs):
+                for n, w in enumerate(doc):
+                    topic = z[d][n]
+
+                    # Remove the topic assignment for the word
+                    theta[d][topic] -= 1
+
+                    # Recalculate the topic
+                    p_topic_given_doc = (theta[d] + self.alpha) / (doc_sampling_count[d] - 1 + self.num_topics * self.alpha)
+                    p_word_given_topic = (self.phi[:,w] + self.beta) / (self.topic_sampling_count + self.vocabulary_size * self.beta + 0.0000001)
+                    p_topic = p_topic_given_doc * p_word_given_topic
+                    p_topic /= np.sum(p_topic)
+                    new_topic = np.random.multinomial(1, p_topic).argmax()
+
+                    # Assign the new topic to the word
+                    z[d][n] = new_topic
+                    theta[d][new_topic] += 1
+
+        posterior_topic_distributions = np.zeros((num_docs, self.num_topics))
+        for d, doc in enumerate(docs):
+            # See p_topic_given_doc above
+            posterior_topic_distributions[d] = (theta[d] + self.alpha) / (doc_sampling_count[d] - 1 + self.num_topics * self.alpha + 0.0000001)
+        # print(posterior_topic_distributions)
+        return posterior_topic_distributions
 
 def main():
     (vocabulary_size,
      training_term_doc_matrix,
      training_labels,
      testing_term_doc_matrix,
-     testing_labels) = load_csv(input_path = 'spam.csv.1000', test_set_size = 500)
+     testing_labels,
+     vocabulary) = load_csv(input_path = 'spam.csv.1000', test_set_size = 500)
 
-    print("SVM with word frequencies")
+    print("== SVM with word frequencies ==")
     evaluate_embeddings(normalize_rows(training_term_doc_matrix),
                         training_labels,
                         normalize_rows(testing_term_doc_matrix),
                         testing_labels)
 
+    print("== SVM with topic distributions from LDA ==")
     lda = LDA(vocabulary_size)
-    lda.train(num_topics=5, term_doc_matrix=training_term_doc_matrix, iterations=10)
+    lda.train(num_topics=50, term_doc_matrix=training_term_doc_matrix, iterations=200)
+    # lda.debug_phi(vocabulary)
 
-    print("SVM with topic distributions from LDA")
-    evaluate_embeddings(lda.get_topic_distributions(training_term_doc_matrix),
+    evaluate_embeddings(lda.get_topic_distributions(term_doc_matrix=training_term_doc_matrix, iterations=20),
                         training_labels,
-                        lda.get_topic_distributions(testing_term_doc_matrix),
+                        lda.get_topic_distributions(term_doc_matrix=testing_term_doc_matrix, iterations=20),
                         testing_labels)
 
 
