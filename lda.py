@@ -116,15 +116,13 @@ class LDA(object):
         return variable_length_docs
 
     def train(self, num_topics, term_doc_matrix, iterations):
-        print("Training LDA...")
+        print('Training an LDA model with {} topics...'.format(num_topics))
         docs = self.get_variable_length_docs(term_doc_matrix)
         num_docs = term_doc_matrix.shape[0]
 
         self.num_topics = num_topics
         self.alpha = 1.0 / num_topics
-            # Dirichlet prior for the topic distribution of documents
-        self.beta = 1.0 / num_docs
-            # Dirichlet prior for the word distribution of topics
+        self.beta = 1.0 / self.vocabulary_size
 
         # Initialize the arrays to 0
         z = [[0 for w in range(len(doc))] for doc in docs]
@@ -241,7 +239,7 @@ def main():
      training_labels,
      testing_term_doc_matrix,
      testing_labels,
-     vocabulary) = load_csv(input_path = 'spam.csv.1000', test_set_size = 500)
+     vocabulary) = load_csv(input_path = 'spam.csv', test_set_size = 500)
 
     print("== SVM with word frequencies ==")
     evaluate_embeddings(normalize_rows(training_term_doc_matrix),
@@ -251,7 +249,7 @@ def main():
 
     print("== SVM with topic distributions from LDA ==")
     lda = LDA(vocabulary_size)
-    lda.train(num_topics=50, term_doc_matrix=training_term_doc_matrix, iterations=200)
+    lda.train(num_topics=20, term_doc_matrix=training_term_doc_matrix, iterations=100)
     # lda.debug_phi(vocabulary)
 
     evaluate_embeddings(lda.get_topic_distributions(term_doc_matrix=training_term_doc_matrix, iterations=20),
