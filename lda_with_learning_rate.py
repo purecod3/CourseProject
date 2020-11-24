@@ -249,8 +249,8 @@ def main():
      testing_labels,
      vocabulary) = load_csv(input_path = 'FA-KES-Dataset.csv',
                             test_set_size=100,
-                            training_set_size=100,
-                            num_stop_words=30,
+                            training_set_size=300,
+                            num_stop_words=50,
                             min_word_freq=5,
                             text_column='article_content',
                             label_column='labels',
@@ -264,12 +264,12 @@ def main():
 
     print("== SVM with topic distributions from LDA ==")
     lda = LDA(vocabulary_size)
-    lda.train(num_topics=20, term_doc_matrix=training_term_doc_matrix, iterations=100, learning_rate=0.1, word_sample_weight=0.6, topic_sample_weight=0.8)
-    lda.print_model(vocabulary)
+    lda.train(num_topics=10, term_doc_matrix=training_term_doc_matrix, iterations=300, learning_rate=0.05, word_sample_weight=0.9, topic_sample_weight=0.9)
+    lda.print_model(vocabulary, print_freq_threshold=0.005)
 
-    evaluate_embeddings(lda.get_topic_distributions(term_doc_matrix=training_term_doc_matrix, iterations=50, learning_rate=0.2),
+    evaluate_embeddings(lda.get_topic_distributions(term_doc_matrix=training_term_doc_matrix, iterations=100, learning_rate=0.1),
                         training_labels,
-                        lda.get_topic_distributions(term_doc_matrix=testing_term_doc_matrix, iterations=50, learning_rate=0.2),
+                        lda.get_topic_distributions(term_doc_matrix=testing_term_doc_matrix, iterations=100, learning_rate=0.1),
                         testing_labels)
 
 
