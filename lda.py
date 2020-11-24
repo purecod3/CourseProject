@@ -46,11 +46,12 @@ def evaluate_embeddings(training_data, training_labels, testing_data, testing_la
             false_positives += 1
         elif predictions[i] == 0 and testing_labels[i] == 1:
             false_negatives += 1
-    print("  Precision = {0:.3f} ({1}/{2})".format(true_positives/(true_positives+false_positives), true_positives, true_positives+false_positives))
+    if true_positives+false_positives > 0:
+        print("  Precision = {0:.3f} ({1}/{2})".format(true_positives/(true_positives+false_positives), true_positives, true_positives+false_positives))
     print("  Recall = {0:.3f} ({1}/{2})".format(true_positives/(true_positives+false_negatives), true_positives, true_positives+false_negatives))
 
 
-def load_csv(input_path, test_set_size):
+def load_csv(input_path, test_set_size, num_stop_words=20, min_word_freq=2):
     label_dict = {'spam': 1, 'ham': 0}
     labels = []
     documents = []
@@ -67,10 +68,19 @@ def load_csv(input_path, test_set_size):
     print('Training data size = {}'.format(training_df.shape[0]))
     print('Testing data size = {}'.format(testing_df.shape[0]))
 
-    words = set()
+    # Remove the stop words
+    word_freq = {}
     for i, row in training_df.iterrows():
-        words.update(row['Message'])
-    vocabulary = sorted(words)
+        for word in row['Message']:
+            if word in word_freq.keys():
+                word_freq[word] += 1
+            else:
+                word_freq[word] = 1
+    words_sorted_by_freq = sorted(word_freq.items(), key=lambda kv: kv[1])[:-num_stop_words]
+    words_sorted_by_freq = list(filter(lambda kv: kv[1] >= min_word_freq, words_sorted_by_freq))
+
+    vocabulary = sorted([kv[0] for kv in words_sorted_by_freq])
+    words = set(vocabulary)
     vocabulary_size = len(vocabulary)
     idx = dict(zip(vocabulary, range(len(vocabulary))))
     print('Vocabulary size = {}'.format(len(words)))
@@ -80,13 +90,13 @@ def load_csv(input_path, test_set_size):
     for i, row in testing_df.iterrows():
         for word in row['Message']:
             if word in words:
-                # the words that do not occur in the training data are skipped
                 testing_term_doc_matrix[i][idx[word]] += 1
 
     training_term_doc_matrix = np.zeros([training_df.shape[0], vocabulary_size], dtype=np.float)
     for i, row in training_df.iterrows():
         for word in row['Message']:
-            training_term_doc_matrix[i-test_set_size][idx[word]] += 1
+            if word in words:
+                training_term_doc_matrix[i-test_set_size][idx[word]] += 1
 
     return (vocabulary_size,
             training_term_doc_matrix,
@@ -163,7 +173,7 @@ class LDA(object):
                     p_topic_given_doc = (theta[d] + self.alpha) / (doc_sampling_count[d] - 1 + self.num_topics * self.alpha)
                     p_word_given_topic = (self.phi[:,w] + self.beta) / (self.topic_sampling_count + self.vocabulary_size * self.beta)
                     p_topic = p_topic_given_doc * p_word_given_topic
-                    p_topic /= np.sum(p_topic)
+                    p_topic /= np.sum(p_topic) + 0.0000001
                     new_topic = np.random.multinomial(1, p_topic).argmax()
 
                     # Assign the new topic to the word
@@ -179,11 +189,11 @@ class LDA(object):
                 print('Iteration {0}: {1} words changed topics.'.format(iteration, topic_changes))
 
 
-    def debug_phi(self, vocabulary):
+    def print_model(self, vocabulary, print_freq_threshold=0.02):
         for topic, words in enumerate(self.phi):
             print('Topic {}:'.format(topic))
             for w, p in enumerate(words / (np.sum(words) + 0.0000001)):
-                if p > 0.01:
+                if p > print_freq_threshold:
                     print(' {0} : {1}'.format(vocabulary[w], p))
 
 
@@ -219,7 +229,7 @@ class LDA(object):
                     p_topic_given_doc = (theta[d] + self.alpha) / (doc_sampling_count[d] - 1 + self.num_topics * self.alpha)
                     p_word_given_topic = (self.phi[:,w] + self.beta) / (self.topic_sampling_count + self.vocabulary_size * self.beta + 0.0000001)
                     p_topic = p_topic_given_doc * p_word_given_topic
-                    p_topic /= np.sum(p_topic)
+                    p_topic /= np.sum(p_topic) + 0.0000001
                     new_topic = np.random.multinomial(1, p_topic).argmax()
 
                     # Assign the new topic to the word
@@ -230,7 +240,6 @@ class LDA(object):
         for d, doc in enumerate(docs):
             # See p_topic_given_doc above
             posterior_topic_distributions[d] = (theta[d] + self.alpha) / (doc_sampling_count[d] - 1 + self.num_topics * self.alpha + 0.0000001)
-        # print(posterior_topic_distributions)
         return posterior_topic_distributions
 
 def main():
@@ -239,7 +248,7 @@ def main():
      training_labels,
      testing_term_doc_matrix,
      testing_labels,
-     vocabulary) = load_csv(input_path = 'spam.csv', test_set_size = 500)
+     vocabulary) = load_csv(input_path = 'spam.csv.1000', test_set_size = 500, num_stop_words=20, min_word_freq=2)
 
     print("== SVM with word frequencies ==")
     evaluate_embeddings(normalize_rows(training_term_doc_matrix),
@@ -249,8 +258,8 @@ def main():
 
     print("== SVM with topic distributions from LDA ==")
     lda = LDA(vocabulary_size)
-    lda.train(num_topics=20, term_doc_matrix=training_term_doc_matrix, iterations=100)
-    # lda.debug_phi(vocabulary)
+    lda.train(num_topics=10, term_doc_matrix=training_term_doc_matrix, iterations=10)
+    lda.print_model(vocabulary)
 
     evaluate_embeddings(lda.get_topic_distributions(term_doc_matrix=training_term_doc_matrix, iterations=20),
                         training_labels,
