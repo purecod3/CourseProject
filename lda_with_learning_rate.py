@@ -51,17 +51,17 @@ def evaluate_embeddings(training_data, training_labels, testing_data, testing_la
     print("  Recall = {0:.3f} ({1}/{2})".format(true_positives/(true_positives+false_negatives), true_positives, true_positives+false_negatives))
 
 
-def load_csv(input_path, test_set_size, num_stop_words=20, min_word_freq=2):
-    label_dict = {'spam': 1, 'ham': 0}
+def load_csv(input_path, test_set_size, training_set_size, num_stop_words, min_word_freq, text_column, label_column, label_dict):
     labels = []
     documents = []
     df = pd.read_csv(input_path,
                      converters={
-                         'Category': lambda x: (label_dict[x]),
-                         'Message': lambda line: list(filter(lambda word: (len(word) > 2),
-                                                             re.sub('[^0-9a-zA-Z]+', ' ', line).lower().split())),
-                                    # replace non-alphanumeric characters with spaces and filter out words with fewer than 3 letters
-                     })
+                         label_column: lambda x: (label_dict[x]),
+                         text_column: lambda line: (re.sub('[^0-9a-zA-Z]+', ' ', line).lower().split()),
+                                    # replace non-alphanumeric characters with spaces
+                     },
+                     encoding='unicode_escape',
+                     nrows=test_set_size+training_set_size)
     testing_df = df[:test_set_size]
     training_df = df[test_set_size:]
 
@@ -71,7 +71,7 @@ def load_csv(input_path, test_set_size, num_stop_words=20, min_word_freq=2):
     # Remove the stop words
     word_freq = {}
     for i, row in training_df.iterrows():
-        for word in row['Message']:
+        for word in row[text_column]:
             if word in word_freq.keys():
                 word_freq[word] += 1
             else:
@@ -88,21 +88,21 @@ def load_csv(input_path, test_set_size, num_stop_words=20, min_word_freq=2):
 
     testing_term_doc_matrix = np.zeros([testing_df.shape[0], vocabulary_size], dtype=np.float)
     for i, row in testing_df.iterrows():
-        for word in row['Message']:
+        for word in row[text_column]:
             if word in words:
                 testing_term_doc_matrix[i][idx[word]] += 1
 
     training_term_doc_matrix = np.zeros([training_df.shape[0], vocabulary_size], dtype=np.float)
     for i, row in training_df.iterrows():
-        for word in row['Message']:
+        for word in row[text_column]:
             if word in words:
                 training_term_doc_matrix[i-test_set_size][idx[word]] += 1
 
     return (vocabulary_size,
             training_term_doc_matrix,
-            training_df['Category'],
+            training_df[label_column],
             testing_term_doc_matrix,
-            testing_df['Category'],
+            testing_df[label_column],
             vocabulary,)
 
 
@@ -247,7 +247,14 @@ def main():
      training_labels,
      testing_term_doc_matrix,
      testing_labels,
-     vocabulary) = load_csv(input_path = 'spam.csv.1500', test_set_size = 500, num_stop_words=10, min_word_freq=3)
+     vocabulary) = load_csv(input_path = 'FA-KES-Dataset.csv',
+                            test_set_size=100,
+                            training_set_size=100,
+                            num_stop_words=30,
+                            min_word_freq=5,
+                            text_column='article_content',
+                            label_column='labels',
+                            label_dict = {'1': 1, '0': 0})
 
     print("== SVM with word frequencies ==")
     evaluate_embeddings(normalize_rows(training_term_doc_matrix),
@@ -257,13 +264,12 @@ def main():
 
     print("== SVM with topic distributions from LDA ==")
     lda = LDA(vocabulary_size)
-    lda.train(num_topics=20, term_doc_matrix=training_term_doc_matrix, iterations=300, learning_rate=0.05, word_sample_weight=0.6, topic_sample_weight=0.8)
+    lda.train(num_topics=20, term_doc_matrix=training_term_doc_matrix, iterations=100, learning_rate=0.1, word_sample_weight=0.6, topic_sample_weight=0.8)
     lda.print_model(vocabulary)
 
-    print("Clustering with 100 iterations and learning rate 0.1")
-    evaluate_embeddings(lda.get_topic_distributions(term_doc_matrix=training_term_doc_matrix, iterations=100, learning_rate=0.1),
+    evaluate_embeddings(lda.get_topic_distributions(term_doc_matrix=training_term_doc_matrix, iterations=50, learning_rate=0.2),
                         training_labels,
-                        lda.get_topic_distributions(term_doc_matrix=testing_term_doc_matrix, iterations=100, learning_rate=0.1),
+                        lda.get_topic_distributions(term_doc_matrix=testing_term_doc_matrix, iterations=50, learning_rate=0.2),
                         testing_labels)
 
 
