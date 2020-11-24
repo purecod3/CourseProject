@@ -125,7 +125,7 @@ class LDA(object):
             variable_length_docs.append(variable_length_doc)
         return variable_length_docs
 
-    def train(self, num_topics, term_doc_matrix, iterations, learning_rate=0.1, sample_weight=0.5):
+    def train(self, num_topics, term_doc_matrix, iterations, learning_rate=0.1, word_sample_weight=0.5, topic_sample_weight=0.5):
         print('Training an LDA model with {} topics...'.format(num_topics))
         docs = self.get_variable_length_docs(term_doc_matrix)
         num_docs = term_doc_matrix.shape[0]
@@ -171,8 +171,8 @@ class LDA(object):
                     self.topic_sampling_count[topic] -= 1
 
                     # Recalculate the topic
-                    p_topic_given_doc = normalize(theta[d]) * sample_weight + self.alpha * (1-sample_weight)
-                    p_word_given_topic = (self.phi[:,w] * (1-sample_weight) + phi[:,w] * sample_weight + self.beta) / (self.topic_sampling_count + self.vocabulary_size * self.beta) # mixing phi to speed up learning
+                    p_topic_given_doc = normalize(theta[d]) * topic_sample_weight + self.alpha * (1-topic_sample_weight)
+                    p_word_given_topic = (self.phi[:,w] * (1-word_sample_weight) + phi[:,w] * word_sample_weight + self.beta) / (self.topic_sampling_count + self.vocabulary_size * self.beta) # mixing phi to speed up learning
                     p_topic = normalize(p_topic_given_doc * p_word_given_topic)
                     new_topic = np.random.multinomial(1, p_topic).argmax()
 
@@ -238,7 +238,7 @@ class LDA(object):
                     theta[d][new_topic] += 1
             posterior_topic_distributions = posterior_topic_distributions * (1.0-learning_rate) + normalize_rows(theta) * learning_rate
 
-        print(posterior_topic_distributions)
+        # print(posterior_topic_distributions)
         return normalize_rows(posterior_topic_distributions)
 
 def main():
@@ -247,7 +247,7 @@ def main():
      training_labels,
      testing_term_doc_matrix,
      testing_labels,
-     vocabulary) = load_csv(input_path = 'spam.csv.1000', test_set_size = 500, num_stop_words=10, min_word_freq=3)
+     vocabulary) = load_csv(input_path = 'spam.csv.1500', test_set_size = 500, num_stop_words=10, min_word_freq=3)
 
     print("== SVM with word frequencies ==")
     evaluate_embeddings(normalize_rows(training_term_doc_matrix),
@@ -257,9 +257,10 @@ def main():
 
     print("== SVM with topic distributions from LDA ==")
     lda = LDA(vocabulary_size)
-    lda.train(num_topics=10, term_doc_matrix=training_term_doc_matrix, iterations=500, learning_rate=0.05, sample_weight=0.6)
+    lda.train(num_topics=20, term_doc_matrix=training_term_doc_matrix, iterations=300, learning_rate=0.05, word_sample_weight=0.6, topic_sample_weight=0.8)
     lda.print_model(vocabulary)
 
+    print("Clustering with 100 iterations and learning rate 0.1")
     evaluate_embeddings(lda.get_topic_distributions(term_doc_matrix=training_term_doc_matrix, iterations=100, learning_rate=0.1),
                         training_labels,
                         lda.get_topic_distributions(term_doc_matrix=testing_term_doc_matrix, iterations=100, learning_rate=0.1),
