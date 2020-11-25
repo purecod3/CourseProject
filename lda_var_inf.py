@@ -1,4 +1,5 @@
 # data to use: fake news
+# term doc matrix - read csv 
 # number of topics: 
 
 # E-step
