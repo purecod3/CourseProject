@@ -24,10 +24,13 @@ def normalize(input_matrix, axis):
 
     sums = input_matrix.sum(axis=axis)
     try:
-        assert (np.count_nonzero(sums)==np.shape(sums)[1-axis]) # no set should sum to zero
+        assert (np.count_nonzero(sums)==np.shape(sums)[0]) # no set should sum to zero
     except Exception:
-        raise Exception("Error while normalizing. Row(s) sum to zero")
-    new_matrix = input_matrix / sums[:, np.newaxis]
+        raise Exception("Error while normalizing. Sums to zero")
+    if axis == 0:
+        new_matrix = input_matrix / sums[np.newaxis:]
+    else:
+        new_matrix = input_matrix / sums[:, np.newaxis]
     return new_matrix
 
 def normalize_rows(input_matrix):
@@ -90,6 +93,8 @@ def load_csv(input_path, test_size, num_docs, stop_words, min_word_freq, text_co
 
     # changed train test split
     training_df , testing_df = train_test_split(df, test_size = 0.2)
+    training_df = training_df.reset_index()
+    testing_df = testing_df.reset_index()
     
     print('Training data size = {}'.format(training_df.shape[0]))
     print('Testing data size = {}'.format(testing_df.shape[0]))
@@ -113,7 +118,7 @@ def load_csv(input_path, test_size, num_docs, stop_words, min_word_freq, text_co
     vocabulary_size = len(vocabulary)
 
     # get word indices - to be used for creating term doc matrices
-    idx = dict(zip(vocabulary, range(len(vocabulary_size))))
+    idx = dict(zip(vocabulary, range(vocabulary_size)))
     
     print('Vocabulary size = {}'.format(vocabulary_size))
     # print(idx)
@@ -149,9 +154,9 @@ class LDA(object):
         self.vocabulary = vocabulary
         self.vocabulary_size = vocabulary_size
         self.num_topics = num_topics
-        self.max_e_iter = max_e_iter, 
-        self.e_epsilon = e_epsilon, 
-        self.max_em_iter = max_em_iter,
+        self.max_e_iter = max_e_iter 
+        self.e_epsilon = e_epsilon
+        self.max_em_iter = max_em_iter
         self.em_epsilon = em_epsilon
         self.alpha = None # topic distribution over the whole corpus (): k-sized 1d array
         self.beta = None # word distribution by topic (eq. 47: phi_i_v): k x |V|
@@ -178,7 +183,9 @@ class LDA(object):
         # phi = normalize(phi, 0)
         
         # initialize gamma: |D| x k
-        gamma = np.full((self.num_docs, self.num_topics), self.alpha + self.term_doc_matrix[i].sum() / self.num_topics)
+        gamma = np.full((self.num_docs, self.num_topics), self.alpha)
+        for i in range(self.num_docs):
+            gamma[i] = gamma[i] + self.term_doc_matrix[i].sum()/self.num_topics
 
         p = []
         num_iter = 0
@@ -189,15 +196,20 @@ class LDA(object):
 
             self.pi = np.array(p) 
             # normalize topic assignment probability by word (p.1005, fig. 6, line 7)
-            self.pi = normalize(self.pi)
+            self.pi = normalize(self.pi, 0)
 
             # update gamma
             gamma = self.alpha + self.pi.sum(axis=0)
 
     def maximization_step(self):
         # updata beta
-        
+        self.beta = self.pi.sum(axis=0)
+        self.beta = normalize(self.beta, 0)
+        # TODO: confirm beta needs to be normalized
+        # not sure if beta needs to be normalized - no mention in either paper    
         # TODO: updata alpha
+    
+    ####################################
     # TODO: confirm no longer necessary
     # TODO: Consider making this indices into the dictionary instead of rebuild documents
     # if this is affecting performance somehow.  (probably won't)
@@ -247,35 +259,64 @@ class LDA(object):
         # recalculate phi - vocabulary word distribution over topic
         # sum up across all docs and words
         # normalize across i (over v) 
-        pass
+        # pass
+    ####################################
 
-    def print_model(self, vocabulary, print_freq_threshold=0.02):
-        for topic, words in enumerate(self.phi):
-            print('Topic {0}: {1:.3f}'.format(topic, self.alpha[topic]))
-            for w, p in enumerate(words / (np.sum(words) + 0.0000001)):
-                if p > print_freq_threshold:
-                    print(' {0} : {1}'.format(vocabulary[w], p))
+    def print_model(self):
+        print('===Corpus level topic distribution (alpha)===')
+        for i in range(self.num_topics):
+            print('Topic {}: alpha:{}'.format(i, self.alpha[i]))
+
+        print('===Corpus level word distribution for each topic (beta)===')
+        top10_beta = np.argsort(self.beta)[:,-10:]
+        print(top10_beta)
+        print(len(self.vocabulary))
+        print(self.beta.shape)
+        for i in range(self.num_topics):
+            print('Topic {}:'.format(i))
+            for j in range(10):
+                print("Word: {}, beta: {}".format(self.vocabulary[top10_beta[i,j]],
+                                                  self.beta[i, top10_beta[i,j]]))
+
+    # def print_model(self, vocabulary, print_freq_threshold=0.02):
+    #     for topic, words in enumerate(self.phi):
+    #         print('Topic {0}: {1:.3f}'.format(topic, self.alpha[topic]))
+    #         for w, p in enumerate(words / (np.sum(words) + 0.0000001)):
+    #             if p > print_freq_threshold:
+    #                 print(' {0} : {1}'.format(vocabulary[w], p))
+    
+    def lda_em(self):
+        self.initialize_params()
+        for i in range(self.max_em_iter):
+            print('EM algorithm iteration {}...'.format(i))
+            self.expectation_step
+            self.maximization_step
+            # TODO: calculate log likelihood?
 
 def main():
     stop_words = set(stopwords.words('english'))
     num_docs = 500
     num_topics = 10
+    max_e_iter = 10
+    e_epsilon = .001
+    max_em_iter = 10
+    em_epsilon = .001
 
     # split training and test, get term doc matrix, set vocabulary and vocabulary size to 
     # ones found in training set
     (vocabulary_size,
-     training_term_doc_matrix,
-     training_labels,
-     testing_term_doc_matrix,
-     testing_labels,
-     vocabulary) = load_csv(input_path = 'FA-KES-Dataset.csv',
-                            test_size=0.2,
-                            num_docs = num_docs,
-                            stop_words=stop_words,
-                            min_word_freq=5,
-                            text_column='article_content',
-                            label_column='labels',
-                            label_dict = {'1': 1, '0': 0})
+    training_term_doc_matrix,
+    training_labels,
+    testing_term_doc_matrix,
+    testing_labels,
+    vocabulary) = load_csv(input_path = 'FA-KES-Dataset.csv',
+                          test_size=0.2,
+                          num_docs = num_docs,
+                          stop_words=stop_words,
+                          min_word_freq=5,
+                          text_column='article_content',
+                          label_column='labels',
+                          label_dict = {'1': 1, '0': 0})
 
     # just use the term frequencies as the model features (naive baseline)
     print("== SVM with word frequencies ==")
@@ -286,18 +327,20 @@ def main():
 
     # now use the LDA model to create model features (test model)
     print("== SVM with topic distributions from LDA ==")
-    lda = LDA(term_doc_matrix, num_docs, vocabulary, vocabulary_size, num_topics)
-    lda.train(num_topics=20, term_doc_matrix=training_term_doc_matrix, iterations=100, learning_rate=0.1, word_sample_weight=0.6, topic_sample_weight=0.8)
+    lda = LDA(training_term_doc_matrix, num_docs, vocabulary, vocabulary_size, num_topics,
+              max_e_iter, e_epsilon, max_em_iter, em_epsilon)
+    # lda.train(num_topics=20, term_doc_matrix=training_term_doc_matrix, iterations=100, learning_rate=0.1, word_sample_weight=0.6, topic_sample_weight=0.8)
     # TODO: need to figure out where learning rate, word_sample_weight, and topic_sample_weight are used
-    lda.print_model(vocabulary)
+    lda.lda_em()
+    lda.print_model()
 
     # every document will have a topic distribution
     # use topic distribution instead of word frequencies to classify
     # may need to rewrite this to just return theta (topic distribution by document)
-    evaluate_embeddings(lda.get_topic_distributions(term_doc_matrix=training_term_doc_matrix, iterations=50, learning_rate=0.2),
-                        training_labels,
-                        lda.get_topic_distributions(term_doc_matrix=testing_term_doc_matrix, iterations=50, learning_rate=0.2),
-                        testing_labels)
+    # evaluate_embeddings(lda.get_topic_distributions(term_doc_matrix=training_term_doc_matrix, iterations=50, learning_rate=0.2),
+    #                     training_labels,
+    #                     lda.get_topic_distributions(term_doc_matrix=testing_term_doc_matrix, iterations=50, learning_rate=0.2),
+    #                     testing_labels)
 
 
 if __name__ == '__main__':
