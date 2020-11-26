@@ -23,14 +23,16 @@ def normalize(input_matrix, axis):
     """
 
     sums = input_matrix.sum(axis=axis)
-    try:
-        assert (np.count_nonzero(sums)==np.shape(sums)[0]) # no set should sum to zero
-    except Exception:
-        raise Exception("Error while normalizing. Sums to zero")
+    # try:
+    #     assert (np.count_nonzero(sums)==np.shape(sums)[0]) # no set should sum to zero
+    # except Exception:
+    #     raise Exception("Error while normalizing. Sums to zero")
     if axis == 0:
-        new_matrix = input_matrix / sums[np.newaxis:]
+        new_matrix = np.divide(input_matrix, sums[np.newaxis:], out=np.zeros_like(input_matrix),
+                               where=sums[np.newaxis:]!=0)
     else:
-        new_matrix = input_matrix / sums[:, np.newaxis]
+        new_matrix = np.divide(input_matrix, sums[:, np.newaxis], out=np.zeros_like(input_matrix),
+                               where=sums[:, np.newaxis]!=0)
     return new_matrix
 
 def normalize_rows(input_matrix):
@@ -160,7 +162,7 @@ class LDA(object):
         self.em_epsilon = em_epsilon
         self.alpha = None # topic distribution over the whole corpus (): k-sized 1d array
         self.beta = None # word distribution by topic (eq. 47: phi_i_v): k x |V|
-        self.pi = [] # word distribution by topic for each document
+        self.pi = None # word distribution by topic for each document
         # self.topic_sampling_count = None
 
     def initialize_params(self):
@@ -186,20 +188,21 @@ class LDA(object):
         gamma = np.full((self.num_docs, self.num_topics), self.alpha)
         for i in range(self.num_docs):
             gamma[i] = gamma[i] + self.term_doc_matrix[i].sum()/self.num_topics
-
-        p = []
-        num_iter = 0
-        while num_iter < self.max_e_iter: # TODO: add distance stopping criteria self.e_epsilon or convergence
+        
+        for i in range(self.max_e_iter): # TODO: add distance stopping criteria self.e_epsilon or convergence
+            p = []
             for j in range(self.num_docs):
                 # update pi
-                p.append(self.beta * self.term_doc_matrix[j] * np.exp(digamma(gamma[j])-digamma(gamma[j].sum())).T)
+                p.append(((self.beta * self.term_doc_matrix[j]).T * np.exp(digamma(gamma[j])-digamma(gamma[j].sum()))).T)
 
             self.pi = np.array(p) 
             # normalize topic assignment probability by word (p.1005, fig. 6, line 7)
-            self.pi = normalize(self.pi, 0)
+            for j in range(self.num_docs):
+                self.pi[j] = normalize(self.pi[j], 0)
 
             # update gamma
-            gamma = self.alpha + self.pi.sum(axis=0)
+            for j in range(self.num_docs):
+                gamma[j] = self.alpha + self.pi[j].sum(axis=1)
 
     def maximization_step(self):
         # updata beta
@@ -207,7 +210,9 @@ class LDA(object):
         self.beta = normalize(self.beta, 0)
         # TODO: confirm beta needs to be normalized
         # not sure if beta needs to be normalized - no mention in either paper    
-        # TODO: updata alpha
+        # TODO: update alpha
+        self.alpha = np.random.random(self.num_topics)
+        self.alpha = self.alpha/self.alpha.sum()
     
     ####################################
     # TODO: confirm no longer necessary
@@ -289,8 +294,8 @@ class LDA(object):
         self.initialize_params()
         for i in range(self.max_em_iter):
             print('EM algorithm iteration {}...'.format(i))
-            self.expectation_step
-            self.maximization_step
+            self.expectation_step()
+            self.maximization_step()
             # TODO: calculate log likelihood?
 
 def main():
@@ -327,7 +332,7 @@ def main():
 
     # now use the LDA model to create model features (test model)
     print("== SVM with topic distributions from LDA ==")
-    lda = LDA(training_term_doc_matrix, num_docs, vocabulary, vocabulary_size, num_topics,
+    lda = LDA(training_term_doc_matrix, len(training_term_doc_matrix), vocabulary, vocabulary_size, num_topics,
               max_e_iter, e_epsilon, max_em_iter, em_epsilon)
     # lda.train(num_topics=20, term_doc_matrix=training_term_doc_matrix, iterations=100, learning_rate=0.1, word_sample_weight=0.6, topic_sample_weight=0.8)
     # TODO: need to figure out where learning rate, word_sample_weight, and topic_sample_weight are used
