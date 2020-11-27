@@ -207,12 +207,12 @@ class LDA(object):
     def maximization_step(self):
         # updata beta
         self.beta = self.pi.sum(axis=0)
-        self.beta = normalize(self.beta, 0)
+        self.beta = normalize(self.beta, 1)
         # TODO: confirm beta needs to be normalized
         # not sure if beta needs to be normalized - no mention in either paper    
         # TODO: update alpha
-        self.alpha = np.random.random(self.num_topics)
-        self.alpha = self.alpha/self.alpha.sum()
+        # self.alpha = np.random.random(self.num_topics)
+        # self.alpha = self.alpha/self.alpha.sum()
     
     ####################################
     # TODO: confirm no longer necessary
