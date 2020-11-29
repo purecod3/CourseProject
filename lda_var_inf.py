@@ -7,7 +7,8 @@ from sklearn import svm
 from sklearn.model_selection import train_test_split
 import time
 from nltk.corpus import stopwords
-from scipy.special import digamma
+from scipy.special import digamma, gammaln, psi # gamma function utils
+from scipy.special import polygamma
 
 # def normalize(row):
 #     """
@@ -147,6 +148,18 @@ def load_csv(input_path, test_size, num_docs, stop_words, min_word_freq, text_co
             testing_df[label_column], # test class
             vocabulary,) # list of words in the vocabulary
 
+# From gensim.  
+# https://github.com/RaRe-Technologies/gensim/blob/6c80294ad8df16a878cb6df586c797184b39564a/gensim/models/ldamodel.py#L434
+def dirichlet_expectation(alpha):
+    """
+    For a vector `theta~Dir(alpha)`, compute `E[log(theta)]`.
+    """
+    if (len(alpha.shape) == 1):
+        result = psi(alpha) - psi(np.sum(alpha))
+    else:
+        result = psi(alpha) - psi(np.sum(alpha, 1))[:, np.newaxis]
+    return result.astype(alpha.dtype) # keep the same precision as input
+
 
 class LDA(object):
     def __init__(self, term_doc_matrix, num_docs, vocabulary, vocabulary_size, num_topics,
@@ -163,7 +176,17 @@ class LDA(object):
         self.alpha = None # topic distribution over the whole corpus (): k-sized 1d array
         self.beta = None # word distribution by topic (eq. 47: phi_i_v): k x |V|
         self.pi = None # word distribution by topic for each document
+        self.gamma = None # topic mixture for each document: |D| x k
         # self.topic_sampling_count = None
+
+        # From gensim.  
+        # https://github.com/RaRe-Technologies/gensim/blob/6c80294ad8df16a878cb6df586c797184b39564a/gensim/models/ldamodel.py#L434
+        self.chunksize = 2000
+        self.num_updates = self.num_docs
+        offset = 1
+        decay = 0.5
+        # rho is the "speed" of updating
+        self.rho = lambda: pow(offset + self.num_updates / self.chunksize, -decay)
 
     def initialize_params(self):
         # initialize alpha
@@ -173,6 +196,33 @@ class LDA(object):
         self.beta = np.ones((self.num_topics, self.vocabulary_size))
         self.beta = normalize(self.beta, 0) # normalize by word as per LDA doc pg. 1005 fig. 6 line 7
 
+    # From gensim.  
+    # https://github.com/RaRe-Technologies/gensim/blob/6c80294ad8df16a878cb6df586c797184b39564a/gensim/models/ldamodel.py#L434
+    def update_alpha(self, gammat, rho):
+        """
+        Update parameters for the Dirichlet prior on the per-document
+        topic weights `alpha` given the last `gammat`.
+        Uses Newton's method, described in **Huang: Maximum Likelihood Estimation of Dirichlet Distribution Parameters.** (http://www.stanford.edu/~jhuang11/research/dirichlet/dirichlet.pdf)
+        """
+        N = float(len(gammat))
+        logphat = sum(dirichlet_expectation(gamma) for gamma in gammat) / N
+        dalpha = np.copy(self.alpha)
+        gradf = N * (psi(np.sum(self.alpha)) - psi(self.alpha) + logphat)
+
+        c = N * polygamma(1, np.sum(self.alpha))
+        q = -N * polygamma(1, self.alpha)
+
+        b = np.sum(gradf / q) / ( 1 / c + np.sum(1 / q))
+
+        dalpha = -(gradf - b) / q
+
+        if all(rho() * dalpha + self.alpha > 0):
+            self.alpha += rho() * dalpha
+        else:
+            print("Warning: updated alpha not positive.")
+        print("optimized alpha %s" % list(self.alpha))
+
+        return self.alpha
 
     def expectation_step(self):
         # update phi
@@ -185,15 +235,17 @@ class LDA(object):
         # phi = normalize(phi, 0)
         
         # initialize gamma: |D| x k
-        gamma = np.full((self.num_docs, self.num_topics), self.alpha)
-        for i in range(self.num_docs):
-            gamma[i] = gamma[i] + self.term_doc_matrix[i].sum()/self.num_topics
+        if self.gamma is None:
+            self.gamma = np.full((self.num_docs, self.num_topics), self.alpha)
+            for i in range(self.num_docs):
+                self.gamma[i] = self.gamma[i] + self.term_doc_matrix[i].sum()/self.num_topics
+
         
         for i in range(self.max_e_iter): # TODO: add distance stopping criteria self.e_epsilon or convergence
             p = []
             for j in range(self.num_docs):
                 # update pi
-                p.append(((self.beta * self.term_doc_matrix[j]).T * np.exp(digamma(gamma[j])-digamma(gamma[j].sum()))).T)
+                p.append(((self.beta * self.term_doc_matrix[j]).T * np.exp(digamma(self.gamma[j])-digamma(self.gamma[j].sum()))).T)
 
             self.pi = np.array(p) 
             # normalize topic assignment probability by word (p.1005, fig. 6, line 7)
@@ -202,7 +254,7 @@ class LDA(object):
 
             # update gamma
             for j in range(self.num_docs):
-                gamma[j] = self.alpha + self.pi[j].sum(axis=1)
+                self.gamma[j] = self.alpha + self.pi[j].sum(axis=1)
 
     def maximization_step(self):
         # updata beta
@@ -213,6 +265,9 @@ class LDA(object):
         # TODO: update alpha
         # self.alpha = np.random.random(self.num_topics)
         # self.alpha = self.alpha/self.alpha.sum()
+
+        # Is gamma right here?  The param is called "gammat", but self.gamma.T causes problems.
+        self.update_alpha(self.gamma, self.rho)
     
     ####################################
     # TODO: confirm no longer necessary
@@ -299,6 +354,10 @@ class LDA(object):
             # TODO: calculate log likelihood?
 
 def main():
+    # This needs to be run once to download stopwords.
+    # import nltk
+    # nltk.download('stopwords')
+
     stop_words = set(stopwords.words('english'))
     num_docs = 500
     num_topics = 10

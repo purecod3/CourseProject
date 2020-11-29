@@ -3,7 +3,8 @@ import numpy as np
 import pandas as pd
 import random
 import re
-from scipy.special import digamma
+from scipy.special import digamma, gammaln, psi # gamma function utils
+from scipy.special import polygamma
 from sklearn import svm
 import time
 
@@ -31,7 +32,7 @@ def normalize_columns(input_matrix):
 
 
 def evaluate_embeddings(training_data, training_labels, testing_data, testing_labels):
-    clf = svm.SVC()
+    clf = svm.SVC(gamma='auto')
     clf.fit(training_data, training_labels)
     predictions = clf.predict(testing_data)
     # print(predictions)
@@ -106,6 +107,18 @@ def load_csv(input_path, test_set_size, training_set_size, num_stop_words, min_w
             testing_df[label_column],
             vocabulary,)
 
+# From gensim.  
+# https://github.com/RaRe-Technologies/gensim/blob/6c80294ad8df16a878cb6df586c797184b39564a/gensim/models/ldamodel.py#L434
+def dirichlet_expectation(alpha):
+    """
+    For a vector `theta~Dir(alpha)`, compute `E[log(theta)]`.
+    """
+    if (len(alpha.shape) == 1):
+        result = psi(alpha) - psi(np.sum(alpha))
+    else:
+        result = psi(alpha) - psi(np.sum(alpha, 1))[:, np.newaxis]
+    return result.astype(alpha.dtype) # keep the same precision as input
+
 
 class LDA(object):
     def __init__(self, vocabulary_size):
@@ -124,10 +137,44 @@ class LDA(object):
             variable_length_docs.append(variable_length_doc)
         return variable_length_docs
 
-    def train(self, num_topics, term_doc_matrix, iterations, e_iterations, e_epsilon):
+    # From gensim.  
+    # https://github.com/RaRe-Technologies/gensim/blob/6c80294ad8df16a878cb6df586c797184b39564a/gensim/models/ldamodel.py#L434
+    def update_alpha(self, gammat, rho):
+        """
+        Update parameters for the Dirichlet prior on the per-document
+        topic weights `alpha` given the last `gammat`.
+        Uses Newton's method, described in **Huang: Maximum Likelihood Estimation of Dirichlet Distribution Parameters.** (http://www.stanford.edu/~jhuang11/research/dirichlet/dirichlet.pdf)
+        """
+        N = float(len(gammat))
+        logphat = sum(dirichlet_expectation(gamma) for gamma in gammat) / N
+        dalpha = np.copy(self.alpha)
+        gradf = N * (psi(np.sum(self.alpha)) - psi(self.alpha) + logphat)
+
+        c = N * polygamma(1, np.sum(self.alpha))
+        q = -N * polygamma(1, self.alpha)
+
+        b = np.sum(gradf / q) / ( 1 / c + np.sum(1 / q))
+
+        dalpha = -(gradf - b) / q
+
+        if all(rho() * dalpha + self.alpha > 0):
+            self.alpha += rho() * dalpha
+        else:
+            print("Warning: updated alpha not positive.")
+        print("optimized alpha %s" % list(self.alpha))
+
+        return self.alpha
+
+    def train(self, num_topics, term_doc_matrix, iterations, e_iterations, e_epsilon, alpha_offset=1.0, alpha_chunksize=2000, alpha_decay=0.5):
         print('Training an LDA model with {} topics...'.format(num_topics))
         docs = self.get_variable_length_docs(term_doc_matrix)
         num_docs = term_doc_matrix.shape[0]
+
+        # From gensim.  (adapted)
+        # https://github.com/RaRe-Technologies/gensim/blob/6c80294ad8df16a878cb6df586c797184b39564a/gensim/models/ldamodel.py#L434
+        num_updates = num_docs
+        # rho is the "speed" of updating
+        rho = lambda: pow(alpha_offset + num_updates / alpha_chunksize, -alpha_decay)
 
         self.num_topics = num_topics
         self.alpha = np.repeat(1.0 / num_topics, num_topics)
@@ -175,7 +222,7 @@ class LDA(object):
                                 self.phi[i][v] += pi[j][t][i]
             self.phi = normalize_rows(self.phi)
             print(self.phi)
-
+            self.alpha = self.update_alpha(gamma, rho)
 
     def print_model(self, vocabulary, print_freq_threshold=0.02):
         for topic, words in enumerate(self.phi):
