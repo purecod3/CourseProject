@@ -32,7 +32,7 @@ def normalize_columns(input_matrix):
 
 
 def evaluate_embeddings(training_data, training_labels, testing_data, testing_labels):
-    clf = svm.SVC()
+    clf = svm.SVC(gamma='auto')
     clf.fit(training_data, training_labels)
     predictions = clf.predict(testing_data)
     # print(predictions)
@@ -126,13 +126,6 @@ class LDA(object):
         self.num_topics = None
         self.alpha = None
         self.phi = None
-        self.rho = None
-
-        # From gensim.  
-        # https://github.com/RaRe-Technologies/gensim/blob/6c80294ad8df16a878cb6df586c797184b39564a/gensim/models/ldamodel.py#L434
-        self.chunksize = 2000
-        self.num_updates = None
-
 
     def get_variable_length_docs(self, term_doc_matrix):
         variable_length_docs = []
@@ -172,18 +165,16 @@ class LDA(object):
 
         return self.alpha
 
-    def train(self, num_topics, term_doc_matrix, iterations, e_iterations, e_epsilon):
+    def train(self, num_topics, term_doc_matrix, iterations, e_iterations, e_epsilon, alpha_offset=1.0, alpha_chunksize=2000, alpha_decay=0.5):
         print('Training an LDA model with {} topics...'.format(num_topics))
         docs = self.get_variable_length_docs(term_doc_matrix)
         num_docs = term_doc_matrix.shape[0]
 
-    # From gensim.  (adapted)
-    # https://github.com/RaRe-Technologies/gensim/blob/6c80294ad8df16a878cb6df586c797184b39564a/gensim/models/ldamodel.py#L434
-        self.num_updates = num_docs
-        offset = 1
-        decay = 0.5
+        # From gensim.  (adapted)
+        # https://github.com/RaRe-Technologies/gensim/blob/6c80294ad8df16a878cb6df586c797184b39564a/gensim/models/ldamodel.py#L434
+        num_updates = num_docs
         # rho is the "speed" of updating
-        self.rho = lambda: pow(offset + self.num_updates / self.chunksize, -decay)
+        rho = lambda: pow(alpha_offset + num_updates / alpha_chunksize, -alpha_decay)
 
         self.num_topics = num_topics
         self.alpha = np.repeat(1.0 / num_topics, num_topics)
@@ -231,7 +222,7 @@ class LDA(object):
                                 self.phi[i][v] += pi[j][t][i]
             self.phi = normalize_rows(self.phi)
             print(self.phi)
-            self.alpha = self.update_alpha(gamma, self.rho)
+            self.alpha = self.update_alpha(gamma, rho)
 
     def print_model(self, vocabulary, print_freq_threshold=0.02):
         for topic, words in enumerate(self.phi):
