@@ -32,7 +32,7 @@ def normalize_columns(input_matrix):
 
 
 def evaluate_embeddings(training_data, training_labels, testing_data, testing_labels):
-    clf = svm.SVC(gamma='auto')
+    clf = svm.SVC()
     clf.fit(training_data, training_labels)
     predictions = clf.predict(testing_data)
     # print(predictions)
