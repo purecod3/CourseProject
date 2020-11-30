@@ -161,68 +161,106 @@ class LDA(object):
             self.alpha += rho() * dalpha
         else:
             print("Warning: updated alpha not positive.")
-        print("optimized alpha %s" % list(self.alpha))
+        # print("optimized alpha %s" % list(self.alpha))
 
         return self.alpha
 
-    def train(self, num_topics, term_doc_matrix, iterations, e_iterations, e_epsilon, alpha_offset=1.0, alpha_chunksize=2000, alpha_decay=0.5):
+    def train(self, num_topics, term_doc_matrix, iterations, e_iterations, e_epsilon, alpha_offset=1.0, alpha_chunksize=2000, alpha_decay=0.5, initial_training_set_size=None, initial_training_iterations=None):
         print('Training an LDA model with {} topics...'.format(num_topics))
         docs = self.get_variable_length_docs(term_doc_matrix)
-        num_docs = term_doc_matrix.shape[0]
 
-        # From gensim.  (adapted)
-        # https://github.com/RaRe-Technologies/gensim/blob/6c80294ad8df16a878cb6df586c797184b39564a/gensim/models/ldamodel.py#L434
-        num_updates = num_docs
-        # rho is the "speed" of updating
-        rho = lambda: pow(alpha_offset + num_updates / alpha_chunksize, -alpha_decay)
-
+        # Initialize the model
         self.num_topics = num_topics
         self.alpha = np.repeat(1.0 / num_topics, num_topics)
-
-        # Initialize the hidden variables
-        pi = [normalize_rows(np.random.random((len(doc), self.num_topics))) for doc in docs]
-            # topic assignment of each word in each doc
-            # dim = num_docs * |doc| * num_topics
-
-        gamma = normalize_rows(np.random.random((num_docs, self.num_topics)))
-            # topic assignment of each doc
-            # dim = num_docs * num_topics
-
         self.phi = normalize_rows(np.random.random((self.num_topics, self.vocabulary_size)))
             # word distribution of each topic
             # dim = num_topics * vocabulary_size
 
+        if initial_training_set_size is not None and initial_training_iterations is not None:
+            print('Initialize the model using {} documents'.format(initial_training_set_size))
+
+            initial_docs = docs[:initial_training_set_size]
+
+            # From gensim.  (adapted)
+            # https://github.com/RaRe-Technologies/gensim/blob/6c80294ad8df16a878cb6df586c797184b39564a/gensim/models/ldamodel.py#L434
+            num_updates = len(initial_docs)
+            # rho is the "speed" of updating
+            rho = lambda: pow(alpha_offset + num_updates / alpha_chunksize, -alpha_decay)
+
+            # Initialize the hidden variables
+            pi = [normalize_rows(np.random.random((len(doc), self.num_topics))) for doc in initial_docs]
+                # topic assignment of each word in each doc
+                # dim = num_docs * |doc| * num_topics
+
+            gamma = normalize_rows(np.random.random((len(initial_docs), self.num_topics)))
+                # topic assignment of each doc
+                # dim = num_docs * num_topics
+
+            for iteration in range(initial_training_iterations):
+                print('  E-M iteration {}'.format(iteration))
+                # E-step
+                (pi, gamma) = self.e_step(initial_docs, pi, gamma, e_iterations, e_epsilon)
+
+                # M-step
+                self.m_step(initial_docs, pi, gamma, rho)
+                print(self.alpha)
+
+        print('Train the model using {} documents'.format(len(docs)))
+
+        # Reset the hidden variables
+        pi = [normalize_rows(np.random.random((len(doc), self.num_topics))) for doc in docs]
+            # topic assignment of each word in each doc
+            # dim = num_docs * |doc| * num_topics
+        gamma = normalize_rows(np.random.random((len(docs), self.num_topics)))
+            # topic assignment of each doc
+            # dim = num_docs * num_topics
+        (pi, gamma) = self.e_step(docs, pi, gamma, e_iterations, e_epsilon)
+        num_updates = len(docs)
+        # rho is the "speed" of updating
+        rho = lambda: pow(alpha_offset + num_updates / alpha_chunksize, -alpha_decay)
+
         for iteration in range(iterations):
-            print('E-M iteration {}'.format(iteration))
+            print('  E-M iteration {}'.format(iteration))
             # E-step
-            for j, doc in enumerate(docs):
-                for e_iteration in range(e_iterations):
-                    previous_gamma = gamma[j].copy()
-                    for t, word in enumerate(doc):
-                        x = digamma(gamma[j].sum())
-                        for i in range(self.num_topics):
-                            pi[j][t][i] = self.phi[i][word] * np.exp(digamma(gamma[j][i]) - x)
-                        pi[j] = normalize_rows(pi[j])
-
-                    for i in range(self.num_topics):
-                        gamma[j][i] = self.alpha[i] + pi[j][:,i].sum()
-
-                    gamma_diff = np.absolute(gamma[j] - previous_gamma).sum()
-                    if gamma_diff < e_epsilon:
-                        break
-                    # print('iter {0} doc {1} e_iter {2} gamma_diff {3:.7f}'.format(iteration, j, e_iteration, gamma_diff))
+            (pi, gamma) = self.e_step(docs, pi, gamma, e_iterations, e_epsilon)
 
             # M-step
-            for i in range(self.num_topics):
-                for v in range(self.vocabulary_size):
-                    self.phi[i][v] = 0.0
-                    for j, doc in enumerate(docs):
-                        for t, word in enumerate(doc):
-                            if word == v:
-                                self.phi[i][v] += pi[j][t][i]
-            self.phi = normalize_rows(self.phi)
-            print(self.phi)
-            self.alpha = self.update_alpha(gamma, rho)
+            self.m_step(docs, pi, gamma, rho)
+            print(self.alpha)
+
+
+    def e_step(self, docs, pi, gamma, e_iterations, e_epsilon):
+        for j, doc in enumerate(docs):
+            for e_iteration in range(e_iterations):
+                previous_gamma = gamma[j].copy()
+                for t, word in enumerate(doc):
+                    x = digamma(gamma[j].sum())
+                    for i in range(self.num_topics):
+                        pi[j][t][i] = self.phi[i][word] * np.exp(digamma(gamma[j][i]) - x)
+                    pi[j] = normalize_rows(pi[j])
+
+                for i in range(self.num_topics):
+                    gamma[j][i] = self.alpha[i] + pi[j][:,i].sum()
+
+                gamma_diff = np.absolute(gamma[j] - previous_gamma).sum()
+                if gamma_diff < e_epsilon:
+                    break
+
+        return (pi, gamma)
+
+
+    def m_step(self, docs, pi, gamma, rho):
+        for i in range(self.num_topics):
+            for v in range(self.vocabulary_size):
+                self.phi[i][v] = 0.0
+                for j, doc in enumerate(docs):
+                    for t, word in enumerate(doc):
+                        if word == v:
+                            self.phi[i][v] += pi[j][t][i]
+        self.phi = normalize_rows(self.phi)
+        # print(self.phi)
+        self.alpha = self.update_alpha(gamma, rho)
+
 
     def print_model(self, vocabulary, print_freq_threshold=0.02):
         for topic, words in enumerate(self.phi):
@@ -247,23 +285,7 @@ class LDA(object):
             # topic assignment of each doc
             # dim = num_docs * num_topics
 
-        # E-step
-        for j, doc in enumerate(docs):
-            for e_iteration in range(e_iterations):
-                previous_gamma = gamma[j].copy()
-                for t, word in enumerate(doc):
-                    x = digamma(gamma[j].sum())
-                    for i in range(self.num_topics):
-                        pi[j][t][i] = self.phi[i][word] * np.exp(digamma(gamma[j][i]) - x)
-                    pi[j] = normalize_rows(pi[j])
-
-                for i in range(self.num_topics):
-                    gamma[j][i] = self.alpha[i] + pi[j][:,i].sum()
-
-                gamma_diff = np.absolute(gamma[j] - previous_gamma).sum()
-                if gamma_diff < e_epsilon:
-                    break
-
+        (pi, gamma) = self.e_step(docs, pi, gamma, e_iterations, e_epsilon)
         return normalize_rows(gamma)
 
 
@@ -282,6 +304,8 @@ def main():
                             label_column='labels',
                             label_dict = {'1': 1, '0': 0})
 
+    np.random.seed(0)
+
     print("== SVM with word frequencies ==")
     evaluate_embeddings(normalize_rows(training_term_doc_matrix),
                         training_labels,
@@ -290,7 +314,8 @@ def main():
 
     print("== SVM with topic distributions from LDA ==")
     lda = LDA(vocabulary_size)
-    lda.train(num_topics=10, term_doc_matrix=training_term_doc_matrix, iterations=20, e_iterations=10, e_epsilon=0.1)
+
+    lda.train(num_topics=10, term_doc_matrix=training_term_doc_matrix, iterations=20, e_iterations=10, e_epsilon=0.1, initial_training_set_size=50, initial_training_iterations=20)
     lda.print_model(vocabulary, print_freq_threshold=0.01)
 
     evaluate_embeddings(lda.get_topic_distributions(term_doc_matrix=training_term_doc_matrix, e_iterations=50, e_epsilon=0.01),
