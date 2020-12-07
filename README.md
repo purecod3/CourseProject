@@ -9,7 +9,7 @@ This project is based on the paper written by D. Blei, A. Ng, and M. Jordan - _L
 ## Files
 |Deliverable|File|Description|
 |----------|----|-----------|
-|[Project Proposal](https://github.com/purecod3/CourseProject/blob/main/ProjectProposal.pdf)|`ProjectProposal.pdf`|Original project proposal submitted on October 24, 2020|
+|[Project Proposal](https://github.com/purecod3/CourseProject/blob/main/Project%20Proposal_%20Reproduce%20Latent%20aspect%20rating%20analysis%20without%20aspect%20keyword%20supervision.pdf)|`Project Proposal_Reproduce Latent aspect rating analysis without aspect keyword supervision.pdf`|Original project proposal submitted on October 24, 2020|
 |[Progress Report](https://github.com/purecod3/CourseProject/blob/main/ProgressReport.pdf)|`ProgressReport.pdf`|Progress report with accomplishments, challenges, and remaining planned activities as of November 29, 2020|
 |__to-do__ [Project Documentation](https://github.com/purecod3/CourseProject/blob/main/ProjectDocumentation.pdf)|`ProjectDocumentation.pdf`|Project documentation submitted December 8, 2020|
 |[Project Video Walk-through](https://mediaspace.illinois.edu/media/t/1_jbzbbspv)|n\a (follow link)|Video presentation of project|
