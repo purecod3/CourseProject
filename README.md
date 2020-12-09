@@ -13,7 +13,7 @@ This project is based on the paper written by D. Blei, A. Ng, and M. Jordan - _L
 |[Progress Report](https://github.com/purecod3/CourseProject/blob/main/ProgressReport.pdf)|`ProgressReport.pdf`|Progress report with accomplishments, challenges, and remaining planned activities as of November 29, 2020|
 |__to-do__ [Project Documentation](https://github.com/purecod3/CourseProject/blob/main/ProjectDocumentation.pdf)|`ProjectDocumentation.pdf`|Project documentation submitted December 8, 2020|
 |[Project Video Walk-through](https://mediaspace.illinois.edu/media/t/1_jbzbbspv)|n\a (follow link)|Video presentation of project|
-|__to-do__ [Project Tutorial](https://github.com/purecod3/CourseProject/blob/main/ProjectTutorial.pdf)|`ProjectTutorial.pdf`|Project tutorial for reproducing experiments (also outlined below)|
+|[Project Tutorial](https://github.com/purecod3/CourseProject/blob/main/ProjectTutorial.pdf)|`ProjectTutorial.pdf`|Project tutorial for reproducing experiments (also outlined below)|
 |[LDA without Smoothing](https://github.com/purecod3/CourseProject/blob/main/lda_var_inf_without_smoothing.py)|`lda_var_inf_without_smoothing.py`|Code for running LDA using variational inference and gensim-based alpha update method|
 |[LDA without Smooting v2](https://github.com/purecod3/CourseProject/blob/main/lda_var_inf_without_smoothing_v2.py)|`lda_var_inf_without_smoothing_v2.py`|Code for running LDA using variational inference. Use if Python environment setup issues are encountered.|
 |[LDA with Collapsed Gibbs Sampling](https://github.com/purecod3/CourseProject/blob/main/lda_gibbs_sampling.py)|`lda_gibbs_sampling.py`|LDA implementation using Collapsed Gibbs Sampling|
